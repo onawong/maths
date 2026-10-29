@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>數的分拆與合成 - 拔河大賽</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <style>
+        body {
+            background-color: #F8FAFC;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            font-family: 'PingFang TC', 'Microsoft JhengHei', 'Comic Sans MS', sans-serif;
+        }
+
+        .sentence-row {
+            white-space: nowrap;
+            flex-wrap: nowrap;
+        }
+
+        .drop-zone {
+            transition: all 0.15s ease;
+        }
+        .drop-zone.active-target {
+            ring: 4px;
+            ring-color: #3B82F6;
+            border-color: #2563EB !important;
+            background-color: #FEF08A !important;
+            animation: pulse-ring 1.2s infinite;
+        }
+        .drop-zone.drag-over {
+            transform: scale(1.08);
+            border-color: #2563EB !important;
+            background-color: #EFF6FF !important;
+            box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
+        }
+        .drop-zone.filled-correct {
+            border-color: #10B981 !important;
+            background-color: #ECFDF5 !important;
+            color: #047857 !important;
+        }
+        .drop-zone.filled-incorrect {
+            border-color: #EF4444 !important;
+            background-color: #FEF2F2 !important;
+            color: #B91C1C !important;
+            animation: shake 0.35s ease-in-out;
+        }
+
+        @keyframes pulse-ring {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+            50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-4px); }
+            40%, 80% { transform: translateX(4px); }
+        }
+
+        .draggable-tile {
+            cursor: grab;
+            touch-action: none;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .draggable-tile:active {
+            cursor: grabbing;
+            transform: scale(1.12);
+        }
+
+        /* Team 1 (Left) pulls rope towards LEFT */
+        @keyframes team1PullLeft {
+            0% { transform: translateX(0) rotate(0deg); }
+            20% { transform: translateX(-28px) rotate(-16deg) scale(1.05); }
+            50% { transform: translateX(-36px) rotate(-20deg) scale(1.08); }
+            80% { transform: translateX(-18px) rotate(-10deg); }
+            100% { transform: translateX(0) rotate(0deg); }
+        }
+
+        /* Team 2 (Right) pulled towards LEFT (towards Team 1) */
+        @keyframes team2DraggedLeft {
+            0% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-24px) rotate(-12deg); }
+            50% { transform: translateX(-32px) rotate(-15deg); }
+            100% { transform: translateX(0) rotate(0deg); }
+        }
+
+        /* Team 2 (Right) pulls rope towards RIGHT */
+        @keyframes team2PullRight {
+            0% { transform: translateX(0) rotate(0deg); }
+            20% { transform: translateX(28px) rotate(16deg) scale(1.05); }
+            50% { transform: translateX(36px) rotate(20deg) scale(1.08); }
+            80% { transform: translateX(18px) rotate(10deg); }
+            100% { transform: translateX(0) rotate(0deg); }
+        }
+
+        /* Team 1 (Left) pulled towards RIGHT (towards Team 2) */
+        @keyframes team1DraggedRight {
+            0% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(24px) rotate(12deg); }
+            50% { transform: translateX(32px) rotate(15deg); }
+            100% { transform: translateX(0) rotate(0deg); }
+        }
+
+        .t1-pulling {
+            animation: team1PullLeft 0.75s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .t2-dragged-left {
+            animation: team2DraggedLeft 0.75s ease-in-out;
+        }
+
+        .t2-pulling {
+            animation: team2PullRight 0.75s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .t1-dragged-right {
+            animation: team1DraggedRight 0.75s ease-in-out;
+        }
+
+        /* Dynamic Theme Palette Mapping */
+        .theme-accent-bg { background-color: var(--theme-color); }
+        .theme-accent-border { border-color: var(--theme-border-color); }
+        .theme-accent-text { color: var(--theme-border-color); }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #F1F5F9;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col justify-between overflow-hidden text-slate-800" id="app-body">
+
+    <header class="bg-white border-b-4 border-slate-200 px-3 md:px-5 py-2 flex flex-wrap items-center justify-between gap-2 shadow-sm z-10 shrink-0">
+        <!-- Main Title -->
+        <div class="flex items-center gap-2.5">
+            <div id="header-icon-box" class="p-2 rounded-2xl border-3 border-slate-800 shadow text-slate-900 transition-colors duration-300 theme-accent-bg">
+                <i class="fa-solid font-bold text-xl fa-robot"></i>
+            </div>
+            <h1 class="text-xl md:text-2xl font-black text-slate-900 tracking-wide">數的分拆與合成</h1>
+        </div>
+
+        <!-- Target Number Selector (For Teaching / Practice View) -->
+        <div id="header-target-selector" class="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border-2 border-slate-300">
+            <span class="text-xs md:text-sm font-black text-slate-700 pl-2 whitespace-nowrap">選擇數字：</span>
+            <div id="target-selector-container" class="flex gap-1.5 overflow-x-auto max-w-[200px] sm:max-w-[350px] md:max-w-[480px] py-0.5 custom-scrollbar">
+                <!-- Target buttons dynamically injected -->
+            </div>
+        </div>
+
+        <!-- Battle Range Selector (For Competition View) -->
+        <div id="header-battle-range" class="hidden flex items-center gap-2 bg-amber-50 p-1.5 rounded-2xl border-2 border-amber-300">
+            <span class="text-xs md:text-sm font-black text-amber-900 pl-2 whitespace-nowrap"><i class="fa-solid fa-bullseye text-amber-600 mr-1"></i>出題範圍：</span>
+            <div class="flex items-center gap-1">
+                <button onclick="setBattleRangePreset(2, 5)" id="btn-range-2-5" class="px-2 py-0.5 rounded-xl font-black text-xs border border-amber-400 bg-white hover:bg-amber-100 text-amber-900 shadow-sm transition">2-5</button>
+                <button onclick="setBattleRangePreset(2, 10)" id="btn-range-2-10" class="px-2 py-0.5 rounded-xl font-black text-xs border border-amber-400 bg-amber-400 text-slate-900 shadow-sm transition font-bold">2-10</button>
+                <button onclick="setBattleRangePreset(5, 10)" id="btn-range-5-10" class="px-2 py-0.5 rounded-xl font-black text-xs border border-amber-400 bg-white hover:bg-amber-100 text-amber-900 shadow-sm transition">5-10</button>
+                <button onclick="setBattleRangePreset(10, 18)" id="btn-range-10-18" class="px-2 py-0.5 rounded-xl font-black text-xs border border-amber-400 bg-white hover:bg-amber-100 text-amber-900 shadow-sm transition">10-18</button>
+            </div>
+            <!-- Custom Range Input -->
+            <div class="flex items-center gap-1 pl-1 border-l-2 border-amber-200">
+                <input type="number" id="battle-min-input" min="2" max="18" value="2" onchange="applyCustomRange()" class="w-10 h-7 text-center font-black text-xs rounded-lg border-2 border-amber-400 bg-white">
+                <span class="text-amber-900 font-black text-xs">至</span>
+                <input type="number" id="battle-max-input" min="2" max="18" value="10" onchange="applyCustomRange()" class="w-10 h-7 text-center font-black text-xs rounded-lg border-2 border-amber-400 bg-white">
+            </div>
+        </div>
+
+        <!-- Mode Switch: Teaching/Practice vs Competition -->
+        <div class="flex items-center gap-2">
+            <div class="flex bg-slate-200 p-1 rounded-2xl border-2 border-slate-300">
+                <button id="btn-mode-learn" onclick="setMainMode('learn')" class="px-3 py-1 rounded-xl font-black text-xs md:text-sm transition-all bg-white text-slate-900 shadow">
+                    <i class="fa-solid fa-chalkboard-user mr-1"></i>教學練習
+                </button>
+                <button id="btn-mode-battle" onclick="setMainMode('battle')" class="px-3 py-1 rounded-xl font-black text-xs md:text-sm text-slate-600 transition-all">
+                    <i class="fa-solid fa-trophy mr-1"></i>雙人拔河
+                </button>
+            </div>
+
+            <button onclick="resetCurrentView()" title="重置" class="p-2 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-2xl border-2 border-amber-400 font-bold transition">
+                <i class="fa-solid fa-rotate-right text-base"></i>
+            </button>
+        </div>
+    </header>
+
+    <main id="view-teaching" class="flex-1 px-3 md:px-5 py-2 grid grid-cols-12 gap-3 items-stretch justify-center overflow-hidden max-w-7xl mx-auto w-full min-h-0">
+        <!-- Sub-mode Selector and Ergonomic Dock Switcher -->
+        <div class="col-span-12 flex justify-between items-center shrink-0">
+            <!-- Palette Position Switcher -->
+            <div id="palette-pos-controls" class="flex items-center gap-1.5 bg-amber-50 p-1 rounded-xl border border-amber-300">
+                <span class="text-xs font-black text-amber-900 px-1.5"><i class="fa-solid fa-grip-vertical mr-1"></i>數碼盤位置：</span>
+                <button onclick="setPalettePosition('side')" id="btn-pos-side" class="px-2.5 py-0.5 rounded-lg font-black text-xs transition-all bg-amber-400 text-slate-900 shadow-sm border border-amber-500">
+                    <i class="fa-solid fa-table-columns mr-1"></i>側邊 Dock
+                </button>
+                <button onclick="setPalettePosition('bottom')" id="btn-pos-bottom" class="px-2.5 py-0.5 rounded-lg font-black text-xs transition-all bg-white text-slate-700 hover:bg-amber-100 border border-amber-300">
+                    <i class="fa-solid fa-window-minimize mr-1"></i>底邊 Footer
+                </button>
+            </div>
+
+            <!-- Teaching / Practice Mode Switch -->
+            <div class="flex bg-slate-200 p-1 rounded-xl border border-slate-300">
+                <button id="btn-sub-learn" onclick="setSubMode('learn')" class="px-3 py-0.5 rounded-lg font-black text-xs transition-all bg-white text-slate-900 shadow">
+                    示範模式
+                </button>
+                <button id="btn-sub-practice" onclick="setSubMode('practice')" class="px-3 py-0.5 rounded-lg font-black text-xs text-slate-600 transition-all">
+                    練習模式
+                </button>
+            </div>
+        </div>
+
+        <!-- Left/Center Robot Pairs List -->
+        <div id="pairs-container" class="col-span-12 lg:col-span-8 flex flex-col gap-2.5 overflow-y-auto pr-1 custom-scrollbar h-full">
+            <!-- Dynamic Robot Pair Cards -->
+        </div>
+
+        <!-- Right Side: Number House (數的分拆屋) + Side Number Dock -->
+        <div class="col-span-12 lg:col-span-4 flex flex-col justify-start items-center h-full min-h-0 gap-2">
+            
+            <!-- Side Dock Number Palette (Displayed when palettePosition === 'side') -->
+            <div id="side-dock-palette" class="w-full max-w-sm bg-slate-900 border-4 border-slate-950 rounded-2xl p-2.5 shadow-lg flex flex-col items-center gap-1.5 shrink-0 transition-all">
+                <div class="flex items-center justify-between w-full px-1">
+                    <span class="text-xs font-black text-amber-300 flex items-center gap-1">
+                        <i class="fa-solid fa-hand-pointer text-amber-400 animate-pulse"></i> 點擊選格或拖拽數碼：
+                    </span>
+                    <span id="completion-badge-side" class="hidden bg-emerald-500 text-white font-black text-xs px-2.5 py-0.5 rounded-full animate-bounce shadow">
+                        <i class="fa-solid fa-circle-check mr-1"></i> 全部答對！
+                    </span>
+                </div>
+                <!-- Dynamic Side Palette Buttons Grid -->
+                <div id="side-number-palette" class="grid grid-cols-6 sm:grid-cols-6 gap-1.5 w-full justify-center">
+                    <!-- Dynamic Palette Tiles -->
+                </div>
+            </div>
+
+            <!-- Number House Card -->
+            <div class="bg-white border-4 border-slate-800 rounded-3xl p-3 shadow-md w-full max-w-sm flex flex-col items-center flex-1 min-h-0">
+                <div class="flex items-center gap-2 mb-1 shrink-0">
+                    <i id="house-icon" class="fa-solid fa-house-chimney text-xl theme-accent-text"></i>
+                    <h2 class="text-lg font-black text-slate-900">數的分拆屋</h2>
+                </div>
+
+                <!-- House Roof: Triangular SVG perfectly aligned with house base width -->
+                <div class="w-full relative flex flex-col items-center shrink-0">
+                    <svg viewBox="0 0 300 75" preserveAspectRatio="none" class="w-full h-14 block filter drop-shadow-sm">
+                        <polygon points="150,4 4,73 296,73" fill="var(--theme-color)" stroke="#1E293B" stroke-width="6" stroke-linejoin="round"/>
+                    </svg>
+                    <div id="house-roof-target" class="absolute bottom-1 text-2xl font-black text-slate-900 w-10 h-10 flex items-center justify-center rounded-xl">
+                        <!-- Target whole number -->
+                    </div>
+                </div>
+
+                <!-- House Grid Body -->
+                <div class="w-full border-4 border-slate-800 bg-white rounded-b-2xl overflow-hidden -mt-[4px] flex-1 flex flex-col min-h-0">
+                    <div id="house-rows-container" class="flex-1 flex flex-col justify-around divide-y-2 divide-slate-800 overflow-hidden">
+                        <!-- Dynamic House Split Rows -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <main id="view-battle" class="hidden flex-1 px-2 md:px-4 py-2 grid grid-cols-12 gap-2 md:gap-3 items-stretch justify-center overflow-hidden max-w-7xl mx-auto w-full min-h-0">
+        
+        <!-- Team 1 Side (Left Panel - Blue/Teal) -->
+        <div class="col-span-4 bg-teal-50 border-4 border-teal-500 rounded-3xl p-2.5 md:p-3 shadow-md flex flex-col justify-between items-center h-full min-h-0 relative">
+            <div class="w-full flex items-center justify-between border-b-2 border-teal-200 pb-1.5 shrink-0">
+                <span class="font-black text-teal-800 text-base md:text-lg flex items-center gap-1.5">
+                    <i class="fa-solid fa-users text-teal-600"></i> 第一隊
+                </span>
+                <span id="score-team1" class="bg-teal-500 text-white font-black text-lg md:text-xl px-3 py-0.5 rounded-full shadow">
+                    0 分
+                </span>
+            </div>
+
+            <!-- Team 1 Robot Diagram -->
+            <div id="t1-diagram-card" class="my-auto bg-white border-3 border-teal-400 rounded-2xl p-3 shadow-sm flex flex-col items-center justify-center w-full max-w-[240px]">
+                <!-- Dynamic Team 1 Question Diagram -->
+            </div>
+
+            <!-- Team 1 Controls & Keypad -->
+            <div class="w-full flex flex-col items-center gap-1.5 shrink-0">
+                <div id="t1-keypad" class="grid grid-cols-5 gap-1 w-full max-w-[250px]">
+                    <!-- Keypad tiles injected dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Arena (Real Tug-of-War Physics Arena) -->
+        <div class="col-span-4 bg-white border-4 border-slate-800 rounded-3xl p-2 md:p-3 shadow-md flex flex-col items-center justify-between h-full min-h-0 relative">
+            
+            <!-- Timer & Match Header -->
+            <div class="w-full bg-slate-100 border-2 border-slate-300 rounded-2xl px-3 py-1 flex items-center justify-between shrink-0">
+                <div class="text-xs font-black text-teal-800">藍隊 <span id="arena-t1-score" class="text-base text-teal-800 font-black">0</span></div>
+                <div class="flex items-center gap-1 text-rose-600 font-black text-sm md:text-base bg-white px-2.5 py-0.5 rounded-xl border border-slate-300 shadow-inner">
+                    <i class="fa-solid fa-clock animate-pulse"></i>
+                    <span id="battle-timer">01:00</span>
+                </div>
+                <div class="text-xs font-black text-rose-800">紅隊 <span id="arena-t2-score" class="text-base text-rose-800 font-black">0</span></div>
+            </div>
+
+            <!-- Tug of War Arena with Realistic Pull Vector Mechanics -->
+            <div class="relative w-full flex-1 my-2 border-2 border-slate-300 rounded-2xl bg-gradient-to-b from-slate-50 to-slate-100 overflow-hidden flex flex-col items-center justify-end min-h-[220px] shadow-inner">
+                
+                <!-- Ground & Center Marker Lines -->
+                <div class="absolute bottom-3 inset-x-4 border-b-2 border-dashed border-slate-300 z-0"></div>
+                <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 border-r-2 border-dashed border-slate-300 z-0"></div>
+                <!-- Red Center Indicator Arrow on Ground -->
+                <div class="absolute bottom-0 left-1/2 -translate-x-1/2 z-0">
+                    <i class="fa-solid fa-caret-up text-rose-600 text-xl animate-bounce"></i>
+                </div>
+
+                <!-- Animated Rope & Tug Indicator Container -->
+                <div id="tug-arena-container" class="relative w-full h-full flex items-center justify-center transition-transform duration-500 ease-out z-10 px-2" style="transform: translateX(0px);">
+                    
+                    <!-- Team 1 Robot (Left - Teal/White) -->
+                    <div id="robot-team1" class="flex flex-col items-center shrink-0 transition-transform duration-300">
+                        <div class="w-20 h-28 md:w-24 md:h-32 relative">
+                            <svg viewBox="0 0 100 130" class="w-full h-full drop-shadow-md">
+                                <line x1="50" y1="20" x2="50" y2="8" stroke="#1E293B" stroke-width="3"/>
+                                <circle cx="50" cy="6" r="4" fill="#F97316"/>
+                                <rect x="22" y="28" width="6" height="12" rx="2" fill="#334155"/>
+                                <rect x="72" y="28" width="6" height="12" rx="2" fill="#334155"/>
+                                <rect x="26" y="18" width="48" height="34" rx="10" fill="#E0F2FE" stroke="#1E293B" stroke-width="3.5"/>
+                                <rect x="32" y="24" width="36" height="20" rx="6" fill="#0F172A"/>
+                                <rect x="38" y="31" width="8" height="5" rx="1" fill="#38BDF8"/>
+                                <rect x="54" y="31" width="8" height="5" rx="1" fill="#38BDF8"/>
+                                <path d="M 34 54 L 66 54 L 70 90 L 30 90 Z" fill="#99F6E4" stroke="#1E293B" stroke-width="3.5"/>
+                                <polygon points="50,54 54,64 50,80 46,64" fill="#0284C7"/>
+                                <path d="M 32 62 L 18 78 L 40 82" fill="none" stroke="#1E293B" stroke-width="4" stroke-linecap="round"/>
+                                <path d="M 68 62 L 82 78 L 60 82" fill="none" stroke="#1E293B" stroke-width="4" stroke-linecap="round"/>
+                                <ellipse cx="50" cy="120" rx="28" ry="6" fill="#0D9488" opacity="0.3"/>
+                                <rect x="36" y="90" width="10" height="24" rx="3" fill="#334155"/>
+                                <rect x="54" y="90" width="10" height="24" rx="3" fill="#334155"/>
+                                <rect x="30" y="110" width="18" height="8" rx="3" fill="#1E293B"/>
+                                <rect x="52" y="110" width="18" height="8" rx="3" fill="#1E293B"/>
+                            </svg>
+                        </div>
+                        <span class="text-xs font-black text-teal-800 bg-teal-100 px-2 py-0.5 rounded-full border border-teal-300 mt-1">藍隊</span>
+                    </div>
+
+                    <!-- Interactive Tug Rope with Center Ribbon -->
+                    <div class="relative flex-1 h-3 bg-amber-800 border-2 border-slate-900 rounded-full flex items-center justify-center -mx-3 z-10 shadow">
+                        <div id="rope-flag" class="w-4 h-7 bg-rose-500 border-2 border-slate-900 rounded-sm shadow-md flex items-center justify-center text-[10px] text-white font-black transform -translate-y-1">
+                            <i class="fa-solid fa-flag"></i>
+                        </div>
+                    </div>
+
+                    <!-- Team 2 Robot (Right - Red/White) -->
+                    <div id="robot-team2" class="flex flex-col items-center shrink-0 transition-transform duration-300">
+                        <div class="w-20 h-28 md:w-24 md:h-32 relative">
+                            <svg viewBox="0 0 100 130" class="w-full h-full drop-shadow-md">
+                                <line x1="50" y1="20" x2="50" y2="8" stroke="#1E293B" stroke-width="3"/>
+                                <circle cx="50" cy="6" r="4" fill="#EA580C"/>
+                                <rect x="22" y="28" width="6" height="12" rx="2" fill="#334155"/>
+                                <rect x="72" y="28" width="6" height="12" rx="2" fill="#334155"/>
+                                <rect x="26" y="18" width="48" height="34" rx="10" fill="#FFEDD5" stroke="#1E293B" stroke-width="3.5"/>
+                                <rect x="32" y="24" width="36" height="20" rx="6" fill="#0F172A"/>
+                                <rect x="38" y="31" width="8" height="5" rx="1" fill="#F43F5E"/>
+                                <rect x="54" y="31" width="8" height="5" rx="1" fill="#F43F5E"/>
+                                <path d="M 34 54 L 66 54 L 70 90 L 30 90 Z" fill="#FECDD3" stroke="#1E293B" stroke-width="3.5"/>
+                                <polygon points="50,54 54,64 50,80 46,64" fill="#E11D48"/>
+                                <path d="M 32 62 L 18 78 L 40 82" fill="none" stroke="#1E293B" stroke-width="4" stroke-linecap="round"/>
+                                <path d="M 68 62 L 82 78 L 60 82" fill="none" stroke="#1E293B" stroke-width="4" stroke-linecap="round"/>
+                                <ellipse cx="50" cy="120" rx="28" ry="6" fill="#BE123C" opacity="0.3"/>
+                                <rect x="36" y="90" width="10" height="24" rx="3" fill="#334155"/>
+                                <rect x="54" y="90" width="10" height="24" rx="3" fill="#334155"/>
+                                <rect x="30" y="110" width="18" height="8" rx="3" fill="#1E293B"/>
+                                <rect x="52" y="110" width="18" height="8" rx="3" fill="#1E293B"/>
+                            </svg>
+                        </div>
+                        <span class="text-xs font-black text-rose-800 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-300 mt-1">紅隊</span>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Game Control Actions -->
+            <div class="w-full flex justify-center gap-2 shrink-0">
+                <button id="btn-start-battle" onclick="startBattleMatch()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-black px-5 py-2 rounded-2xl border-2 border-emerald-700 shadow-md text-base transition-all flex items-center gap-1.5">
+                    <i class="fa-solid fa-play"></i> 開始比賽
+                </button>
+            </div>
+        </div>
+
+        <!-- Team 2 Side (Right Panel - Red) -->
+        <div class="col-span-4 bg-rose-50 border-4 border-rose-500 rounded-3xl p-2.5 md:p-3 shadow-md flex flex-col justify-between items-center h-full min-h-0 relative">
+            <div class="w-full flex items-center justify-between border-b-2 border-rose-200 pb-1.5 shrink-0">
+                <span class="font-black text-rose-800 text-base md:text-lg flex items-center gap-1.5">
+                    <i class="fa-solid fa-users text-rose-600"></i> 第二隊
+                </span>
+                <span id="score-team2" class="bg-rose-500 text-white font-black text-lg md:text-xl px-3 py-0.5 rounded-full shadow">
+                    0 分
+                </span>
+            </div>
+
+            <!-- Team 2 Robot Diagram -->
+            <div id="t2-diagram-card" class="my-auto bg-white border-3 border-rose-400 rounded-2xl p-3 shadow-sm flex flex-col items-center justify-center w-full max-w-[240px]">
+                <!-- Dynamic Team 2 Question Diagram -->
+            </div>
+
+            <!-- Team 2 Controls & Keypad -->
+            <div class="w-full flex flex-col items-center gap-1.5 shrink-0">
+                <div id="t2-keypad" class="grid grid-cols-5 gap-1 w-full max-w-[250px]">
+                    <!-- Keypad tiles injected dynamically -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <footer id="footer-palette" class="hidden bg-slate-900 p-2 border-t-4 border-slate-950 shadow-2xl flex flex-col items-center gap-1 shrink-0 z-20">
+        <div class="flex items-center justify-between w-full max-w-5xl px-2">
+            <span class="text-xs md:text-sm font-black text-amber-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-hand-pointer animate-bounce"></i> 拖拽數字或點擊選擇：
+            </span>
+            <span id="completion-badge-bottom" class="hidden bg-emerald-500 text-white font-black text-xs md:text-sm px-3 py-0.5 rounded-full animate-bounce shadow">
+                <i class="fa-solid fa-face-smile mr-1"></i> 太棒了！全部答對！
+            </span>
+        </div>
+
+        <div id="bottom-number-palette" class="flex flex-wrap justify-center gap-1.5 max-w-6xl">
+            <!-- Dynamic Palette Tiles -->
+        </div>
+    </footer>
+
+    <!-- Victory Modal Overlay for Battle Mode -->
+    <div id="battle-winner-modal" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white border-4 border-slate-800 rounded-3xl p-6 shadow-2xl max-w-md w-full text-center flex flex-col items-center">
+            <div id="winner-icon-box" class="w-20 h-20 rounded-full border-4 border-slate-800 flex items-center justify-center text-4xl mb-3 shadow">
+                <i class="fa-solid fa-trophy text-amber-400"></i>
+            </div>
+            <h2 id="winner-title" class="text-2xl font-black text-slate-900 mb-1">獲勝隊伍！</h2>
+            <p id="winner-desc" class="text-base font-bold text-slate-600 mb-5">表現太出色了！</p>
+            <button onclick="closeWinnerModal()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2.5 rounded-2xl border-2 border-emerald-700 shadow-md text-base transition">
+                再次挑戰
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Soft Pastel Theme Palette for Target Numbers 2 through 18
+        const PASTEL_THEMES = {
+            2:  { main: '#FEF08A', border: '#EAB308', text: '#854D0E' },
+            3:  { main: '#BAE6FD', border: '#0284C7', text: '#075985' },
+            4:  { main: '#A7F3D0', border: '#059669', text: '#065F46' },
+            5:  { main: '#FBCFE8', border: '#DB2777', text: '#9D174D' },
+            6:  { main: '#DDD6FE', border: '#7C3AED', text: '#5B21B6' },
+            7:  { main: '#FFEDD5', border: '#EA580C', text: '#9A3412' },
+            8:  { main: '#CFFAFE', border: '#0891B2', text: '#155E75' },
+            9:  { main: '#E9D5FF', border: '#9333EA', text: '#6B21A8' },
+            10: { main: '#FECDD3', border: '#E11D48', text: '#9F1239' },
+            11: { main: '#C7D2FE', border: '#4F46E5', text: '#3730A3' },
+            12: { main: '#CCFBF1', border: '#0D9488', text: '#115E59' },
+            13: { main: '#FED7AA', border: '#D97706', text: '#92400E' },
+            14: { main: '#F5D0FE', border: '#C026D3', text: '#86198F' },
+            15: { main: '#E0F2FE', border: '#0284C7', text: '#075985' },
+            16: { main: '#DCFCE7', border: '#16A34A', text: '#166534' },
+            17: { main: '#FFE4E6', border: '#F43F5E', text: '#9F1239' },
+            18: { main: '#E2E8F0', border: '#64748B', text: '#334155' },
+        };
+
+        const state = {
+            mainMode: 'learn', // 'learn' or 'battle'
+            subMode: 'learn',  // 'learn' or 'practice'
+            palettePosition: 'side', // Ergonomic position: 'side' or 'bottom'
+            targetNumber: 3,
+            pairs: [],
+            selectedTileValue: null,
+            activeDropZoneId: null, // Track highlighted active drop zone
+            userAnswers: {},
+
+            // Battle Mode Specific State
+            battle: {
+                active: false,
+                timeLeft: 60,
+                timerInterval: null,
+                scoreT1: 0,
+                scoreT2: 0,
+                minRange: 2,
+                maxRange: 10,
+                qT1: null,
+                qT2: null,
+                ansT1: null,
+                ansT2: null,
+            }
+        };
+
+        function updateTheme(targetNum) {
+            const theme = PASTEL_THEMES[targetNum] || PASTEL_THEMES[3];
+            document.documentElement.style.setProperty('--theme-color', theme.main);
+            document.documentElement.style.setProperty('--theme-border-color', theme.border);
+        }
+
+        // Updated: Strictly 1 to 9 (0 excluded)
+        function calculatePairs(target) {
+            const pairs = [];
+            const minA = Math.max(1, target - 9);
+            const maxA = Math.min(target - 1, 9);
+            
+            for (let i = minA; i <= maxA; i++) {
+                pairs.push([i, target - i]);
+            }
+            return pairs;
+        }
+
+        function setTargetNumber(num) {
+            state.targetNumber = num;
+            state.pairs = calculatePairs(num);
+            state.userAnswers = {};
+            state.selectedTileValue = null;
+            state.activeDropZoneId = null;
+            
+            updateTheme(num);
+            updateTargetSelectorUI();
+            
+            if (state.mainMode === 'learn') {
+                renderTeachingComponents();
+            }
+        }
+
+        function setPalettePosition(pos) {
+            state.palettePosition = pos;
+            
+            document.getElementById('btn-pos-side').className = pos === 'side'
+                ? "px-2.5 py-0.5 rounded-lg font-black text-xs transition-all bg-amber-400 text-slate-900 shadow-sm border border-amber-500"
+                : "px-2.5 py-0.5 rounded-lg font-black text-xs transition-all bg-white text-slate-700 hover:bg-amber-100 border border-amber-300";
+
+            document.getElementById('btn-pos-bottom').className = pos === 'bottom'
+                ? "px-2.5 py-0.5 rounded-lg font-black text-xs transition-all bg-amber-400 text-slate-900 shadow-sm border border-amber-500"
+                : "px-2.5 py-0.5 rounded-lg font-black text-xs transition-all bg-white text-slate-700 hover:bg-amber-100 border border-amber-300";
+
+            renderTeachingComponents();
+        }
+
+        function setMainMode(mode) {
+            state.mainMode = mode;
+            
+            document.getElementById('btn-mode-learn').className = mode === 'learn' 
+                ? 'px-3 py-1 rounded-xl font-black text-xs md:text-sm transition-all bg-white text-slate-900 shadow'
+                : 'px-3 py-1 rounded-xl font-black text-xs md:text-sm text-slate-600 transition-all';
+
+            document.getElementById('btn-mode-battle').className = mode === 'battle' 
+                ? 'px-3 py-1 rounded-xl font-black text-xs md:text-sm transition-all bg-white text-slate-900 shadow'
+                : 'px-3 py-1 rounded-xl font-black text-xs md:text-sm text-slate-600 transition-all';
+
+            if (mode === 'learn') {
+                document.getElementById('view-teaching').classList.remove('hidden');
+                document.getElementById('view-battle').classList.add('hidden');
+                document.getElementById('header-target-selector').classList.remove('hidden');
+                document.getElementById('header-battle-range').classList.add('hidden');
+                renderTeachingComponents();
+            } else {
+                document.getElementById('view-teaching').classList.add('hidden');
+                document.getElementById('view-battle').classList.remove('hidden');
+                document.getElementById('footer-palette').classList.add('hidden');
+                document.getElementById('header-target-selector').classList.add('hidden');
+                document.getElementById('header-battle-range').classList.remove('hidden');
+                initBattleMode();
+            }
+        }
+
+        function setSubMode(sub) {
+            state.subMode = sub;
+            state.userAnswers = {};
+            state.selectedTileValue = null;
+            state.activeDropZoneId = null;
+
+            document.getElementById('btn-sub-learn').className = sub === 'learn' 
+                ? 'px-3 py-0.5 rounded-lg font-black text-xs transition-all bg-white text-slate-900 shadow'
+                : 'px-3 py-0.5 rounded-lg font-black text-xs text-slate-600 transition-all';
+
+            document.getElementById('btn-sub-practice').className = sub === 'practice' 
+                ? 'px-3 py-0.5 rounded-lg font-black text-xs transition-all bg-white text-slate-900 shadow'
+                : 'px-3 py-0.5 rounded-lg font-black text-xs text-slate-600 transition-all';
+
+            renderTeachingComponents();
+        }
+
+        function resetCurrentView() {
+            if (state.mainMode === 'learn') {
+                state.userAnswers = {};
+                state.selectedTileValue = null;
+                state.activeDropZoneId = null;
+                renderTeachingComponents();
+            } else {
+                initBattleMode();
+            }
+        }
+
+        function updateTargetSelectorUI() {
+            const container = document.getElementById('target-selector-container');
+            container.innerHTML = '';
+
+            for (let n = 2; n <= 18; n++) {
+                const isSelected = n === state.targetNumber;
+                const btn = document.createElement('button');
+                
+                if (isSelected) {
+                    btn.className = `w-7 h-7 rounded-xl font-black text-xs md:text-sm flex items-center justify-center flex-shrink-0 transition-all shadow scale-105 border-2 border-slate-900 text-slate-900 theme-accent-bg`;
+                } else {
+                    btn.className = `w-7 h-7 rounded-xl font-black text-xs md:text-sm flex items-center justify-center flex-shrink-0 transition-all bg-white text-slate-700 hover:bg-slate-200 border border-slate-300`;
+                }
+                
+                btn.textContent = n;
+                btn.onclick = () => setTargetNumber(n);
+                container.appendChild(btn);
+            }
+        }
+
+        function setBattleRangePreset(min, max) {
+            state.battle.minRange = min;
+            state.battle.maxRange = max;
+            document.getElementById('battle-min-input').value = min;
+            document.getElementById('battle-max-input').value = max;
+            updateBattleRangePresetButtons();
+            
+            if (state.mainMode === 'battle') {
+                generateBattleQuestions();
+                renderBattleView();
+            }
+        }
+
+        function applyCustomRange() {
+            let min = parseInt(document.getElementById('battle-min-input').value) || 2;
+            let max = parseInt(document.getElementById('battle-max-input').value) || 10;
+            
+            if (min < 2) min = 2;
+            if (max > 18) max = 18;
+            if (min > max) min = max;
+
+            state.battle.minRange = min;
+            state.battle.maxRange = max;
+
+            document.getElementById('battle-min-input').value = min;
+            document.getElementById('battle-max-input').value = max;
+
+            updateBattleRangePresetButtons();
+            if (state.mainMode === 'battle') {
+                generateBattleQuestions();
+                renderBattleView();
+            }
+        }
+
+        function updateBattleRangePresetButtons() {
+            const presets = [
+                { id: 'btn-range-2-5', min: 2, max: 5 },
+                { id: 'btn-range-2-10', min: 2, max: 10 },
+                { id: 'btn-range-5-10', min: 5, max: 10 },
+                { id: 'btn-range-10-18', min: 10, max: 18 }
+            ];
+
+            presets.forEach(p => {
+                const btn = document.getElementById(p.id);
+                if (state.battle.minRange === p.min && state.battle.maxRange === p.max) {
+                    btn.className = "px-2 py-0.5 rounded-xl font-black text-xs border border-amber-400 bg-amber-400 text-slate-900 shadow-sm transition font-bold";
+                } else {
+                    btn.className = "px-2 py-0.5 rounded-xl font-black text-xs border border-amber-400 bg-white hover:bg-amber-100 text-amber-900 shadow-sm transition";
+                }
+            });
+        }
+
+        function renderTeachingComponents() {
+            renderPairsList();
+            renderHouse();
+            renderPalette();
+            checkCompletion();
+        }
+
+        function renderPairsList() {
+            const container = document.getElementById('pairs-container');
+            container.innerHTML = '';
+
+            state.pairs.forEach((pair, pairIdx) => {
+                const [p1, p2] = pair;
+                const whole = state.targetNumber;
+
+                const card = document.createElement('div');
+                card.className = "bg-white border-4 border-slate-800 rounded-3xl p-2.5 md:p-3 shadow-sm flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 shrink-0";
+
+                const robotHTML = `
+                    <div class="flex flex-col items-center min-w-[150px] sm:min-w-[170px] relative shrink-0">
+                        <div class="relative flex justify-center items-center">
+                            <div class="absolute -left-2.5 w-3 h-5 bg-slate-800 rounded-l-md"></div>
+                            <div class="absolute -right-2.5 w-3 h-5 bg-slate-800 rounded-r-md"></div>
+                            <div class="absolute -top-3 w-1.5 h-3 bg-slate-800"></div>
+                            <div class="absolute -top-4 w-3.5 h-3.5 rounded-full bg-slate-800"></div>
+
+                            <div class="w-16 h-16 sm:w-18 sm:h-18 rounded-full border-4 border-slate-800 theme-accent-bg shadow-md flex items-center justify-center text-2xl font-black text-slate-900 z-10">
+                                ${renderValue(whole, true)}
+                            </div>
+                        </div>
+
+                        <svg class="w-36 h-8 -my-0.5 z-0 overflow-visible" viewBox="0 0 160 40">
+                            <line x1="80" y1="0" x2="30" y2="40" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+                            <line x1="80" y1="0" x2="130" y2="40" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+                        </svg>
+
+                        <div class="flex justify-between w-full px-1 z-10">
+                            <div class="w-11 h-11 sm:w-13 sm:h-13 rounded-full border-4 border-slate-800 bg-white flex items-center justify-center text-xl font-black text-slate-900 shadow">
+                                ${renderDropZone(`robot-p1-${pairIdx}`, p1)}
+                            </div>
+                            <div class="w-11 h-11 sm:w-13 sm:h-13 rounded-full border-4 border-slate-800 bg-white flex items-center justify-center text-xl font-black text-slate-900 shadow">
+                                ${renderDropZone(`robot-p2-${pairIdx}`, p2)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                const mathHTML = `
+                    <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 text-slate-800 font-black text-base sm:text-lg items-center w-full overflow-x-auto custom-scrollbar">
+                        <div class="space-y-1.5 bg-amber-50/70 p-2 rounded-2xl border-2 border-amber-200">
+                            <div class="flex items-center gap-1 sentence-row whitespace-nowrap">
+                                <span>${renderDropZone(`cn-synt-p1-${pairIdx}`, p1)}</span>
+                                <span class="px-0.5">和</span>
+                                <span>${renderDropZone(`cn-synt-p2-${pairIdx}`, p2)}</span>
+                                <span class="text-amber-700 bg-amber-200 px-1.5 py-0.5 rounded-lg border border-amber-300 font-black text-sm md:text-base">合 成</span>
+                                <span class="px-0.5">為</span>
+                                <span>${renderValue(whole, true)}</span>
+                            </div>
+                            <div class="flex items-center gap-1 sentence-row whitespace-nowrap">
+                                <span>${renderValue(whole, true)}</span>
+                                <span class="text-emerald-800 bg-emerald-200 px-1.5 py-0.5 rounded-lg border border-emerald-300 font-black text-sm md:text-base">分 解</span>
+                                <span class="px-0.5">為</span>
+                                <span>${renderDropZone(`cn-decomp-p1-${pairIdx}`, p1)}</span>
+                                <span class="px-0.5">和</span>
+                                <span>${renderDropZone(`cn-decomp-p2-${pairIdx}`, p2)}</span>
+                            </div>
+                        </div>
+
+                        <div class="space-y-1.5 bg-slate-50 p-2 rounded-2xl border-2 border-slate-200">
+                            <div class="flex items-center gap-1.5 whitespace-nowrap">
+                                <span>${renderDropZone(`eq-add-p1-${pairIdx}`, p1)}</span>
+                                <span class="text-amber-600 font-black text-lg">+</span>
+                                <span>${renderDropZone(`eq-add-p2-${pairIdx}`, p2)}</span>
+                                <span class="text-slate-500 font-black">=</span>
+                                <span>${renderValue(whole, true)}</span>
+                            </div>
+                            <div class="flex items-center gap-1.5 whitespace-nowrap">
+                                <span>${renderValue(whole, true)}</span>
+                                <span class="text-emerald-700 font-black text-lg">-</span>
+                                <span>${renderDropZone(`eq-sub-p1-${pairIdx}`, p1)}</span>
+                                <span class="text-slate-500 font-black">=</span>
+                                <span>${renderDropZone(`eq-sub-p2-${pairIdx}`, p2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                card.innerHTML = robotHTML + mathHTML;
+                container.appendChild(card);
+            });
+
+            attachDropZoneEvents();
+        }
+
+        function renderHouse() {
+            const roofTarget = document.getElementById('house-roof-target');
+            roofTarget.innerHTML = `<span class="font-black">${state.targetNumber}</span>`;
+
+            const container = document.getElementById('house-rows-container');
+            container.innerHTML = '';
+
+            state.pairs.forEach((pair, idx) => {
+                const [p1, p2] = pair;
+                const row = document.createElement('div');
+                row.className = "grid grid-cols-2 text-center py-1 items-center divide-x-2 divide-slate-800 text-lg sm:text-xl font-black text-slate-900 hover:bg-slate-50 flex-1";
+
+                row.innerHTML = `
+                    <div class="flex justify-center items-center h-full">${renderDropZone(`house-p1-${idx}`, p1)}</div>
+                    <div class="flex justify-center items-center h-full">${renderDropZone(`house-p2-${idx}`, p2)}</div>
+                `;
+                container.appendChild(row);
+            });
+
+            attachDropZoneEvents();
+        }
+
+        function renderValue(val, isAlwaysFilled = false) {
+            if (state.subMode === 'learn' || isAlwaysFilled) {
+                return `<span class="inline-block font-black">${val}</span>`;
+            }
+            return renderDropZone(null, val);
+        }
+
+        function renderDropZone(id, expectedValue) {
+            if (state.subMode === 'learn') {
+                return `<span class="inline-block font-black">${expectedValue}</span>`;
+            }
+
+            const currentValue = state.userAnswers[id];
+            const isFilled = currentValue !== undefined && currentValue !== null;
+            const isCorrect = isFilled && parseInt(currentValue) === parseInt(expectedValue);
+            const isActive = state.activeDropZoneId === id;
+            
+            let statusClass = "bg-white border-2 border-dashed border-slate-400";
+            if (isActive) {
+                statusClass = "active-target border-2 border-blue-600 bg-amber-100 text-slate-900 font-black";
+            } else if (isFilled) {
+                statusClass = isCorrect ? "filled-correct border-2 border-emerald-500 text-emerald-700 font-black" : "filled-incorrect border-2 border-rose-500 text-rose-700 font-black";
+            }
+
+            return `
+                <div id="${id}" 
+                     class="drop-zone inline-flex min-w-[32px] h-8 px-1 rounded-xl items-center justify-center font-black text-base md:text-lg cursor-pointer ${statusClass}" 
+                     data-expected="${expectedValue}" 
+                     data-id="${id}">
+                    ${isFilled ? currentValue : ''}
+                </div>
+            `;
+        }
+
+        function renderPalette() {
+            const sideDock = document.getElementById('side-dock-palette');
+            const footerPalette = document.getElementById('footer-palette');
+            const sideContainer = document.getElementById('side-number-palette');
+            const bottomContainer = document.getElementById('bottom-number-palette');
+
+            if (state.subMode === 'learn') {
+                sideDock.classList.add('hidden');
+                footerPalette.classList.add('hidden');
+                return;
+            }
+
+            if (state.palettePosition === 'side') {
+                sideDock.classList.remove('hidden');
+                footerPalette.classList.add('hidden');
+            } else {
+                sideDock.classList.add('hidden');
+                footerPalette.classList.remove('hidden');
+            }
+
+            sideContainer.innerHTML = '';
+            bottomContainer.innerHTML = '';
+
+            const targetContainer = state.palettePosition === 'side' ? sideContainer : bottomContainer;
+            const maxTile = Math.max(state.targetNumber, 9);
+
+            // Palette starts from 1 (0 excluded)
+            for (let i = 1; i <= maxTile; i++) {
+                const isSelected = state.selectedTileValue === i;
+                const tile = document.createElement('div');
+                
+                tile.className = `draggable-tile w-9 h-9 sm:w-11 sm:h-11 border-3 border-slate-800 rounded-xl flex items-center justify-center text-slate-900 font-black text-lg sm:text-xl shadow ${
+                    isSelected ? 'ring-4 ring-sky-400 scale-110 bg-amber-200' : 'theme-accent-bg hover:opacity-90'
+                }`;
+                tile.textContent = i;
+                tile.draggable = true;
+
+                tile.onclick = () => {
+                    if (state.activeDropZoneId) {
+                        handleFillZone(state.activeDropZoneId, i);
+                        state.activeDropZoneId = null;
+                    } else {
+                        state.selectedTileValue = (state.selectedTileValue === i) ? null : i;
+                        renderPalette();
+                    }
+                };
+
+                tile.ondragstart = (e) => {
+                    e.dataTransfer.setData('text/plain', i.toString());
+                    state.selectedTileValue = i;
+                };
+
+                targetContainer.appendChild(tile);
+            }
+        }
+
+        function attachDropZoneEvents() {
+            if (state.subMode === 'learn') return;
+
+            const zones = document.querySelectorAll('.drop-zone');
+            zones.forEach(zone => {
+                zone.ondragover = (e) => {
+                    e.preventDefault();
+                    zone.classList.add('drag-over');
+                };
+
+                zone.ondragleave = () => {
+                    zone.classList.remove('drag-over');
+                };
+
+                zone.ondrop = (e) => {
+                    e.preventDefault();
+                    zone.classList.remove('drag-over');
+                    const val = e.dataTransfer.getData('text/plain') || state.selectedTileValue;
+                    if (val !== null && val !== undefined) {
+                        handleFillZone(zone.dataset.id, parseInt(val));
+                    }
+                };
+
+                zone.onclick = (e) => {
+                    e.stopPropagation();
+                    if (state.selectedTileValue !== null) {
+                        handleFillZone(zone.dataset.id, state.selectedTileValue);
+                        state.selectedTileValue = null;
+                        state.activeDropZoneId = null;
+                    } else if (state.userAnswers[zone.dataset.id] !== undefined) {
+                        delete state.userAnswers[zone.dataset.id];
+                        state.activeDropZoneId = null;
+                        renderTeachingComponents();
+                    } else {
+                        state.activeDropZoneId = (state.activeDropZoneId === zone.dataset.id) ? null : zone.dataset.id;
+                        renderTeachingComponents();
+                    }
+                };
+            });
+        }
+
+        function handleFillZone(id, val) {
+            state.userAnswers[id] = val;
+            renderTeachingComponents();
+        }
+
+        function checkCompletion() {
+            const badgeSide = document.getElementById('completion-badge-side');
+            const badgeBottom = document.getElementById('completion-badge-bottom');
+
+            if (state.subMode === 'learn') {
+                badgeSide.classList.add('hidden');
+                badgeBottom.classList.add('hidden');
+                return;
+            }
+
+            const zones = document.querySelectorAll('.drop-zone');
+            if (zones.length === 0) return;
+
+            let allFilled = true;
+            let allCorrect = true;
+
+            zones.forEach(zone => {
+                const id = zone.dataset.id;
+                const expected = parseInt(zone.dataset.expected);
+                const userVal = state.userAnswers[id];
+
+                if (userVal === undefined || userVal === null) {
+                    allFilled = false;
+                } else if (parseInt(userVal) !== expected) {
+                    allCorrect = false;
+                }
+            });
+
+            if (allFilled && allCorrect) {
+                badgeSide.classList.remove('hidden');
+                badgeBottom.classList.remove('hidden');
+                confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+            } else {
+                badgeSide.classList.add('hidden');
+                badgeBottom.classList.add('hidden');
+            }
+        }
+
+        function initBattleMode() {
+            state.battle.scoreT1 = 0;
+            state.battle.scoreT2 = 0;
+            state.battle.timeLeft = 60;
+            state.battle.active = false;
+            if (state.battle.timerInterval) clearInterval(state.battle.timerInterval);
+
+            document.getElementById('btn-start-battle').classList.remove('hidden');
+            document.getElementById('battle-timer').textContent = "01:00";
+
+            generateBattleQuestions();
+            renderBattleView();
+            updateRopePosition();
+        }
+
+        function startBattleMatch() {
+            state.battle.scoreT1 = 0;
+            state.battle.scoreT2 = 0;
+            state.battle.timeLeft = 60;
+            state.battle.active = true;
+            document.getElementById('btn-start-battle').classList.add('hidden');
+
+            generateBattleQuestions();
+            renderBattleView();
+            updateRopePosition();
+
+            if (state.battle.timerInterval) clearInterval(state.battle.timerInterval);
+
+            state.battle.timerInterval = setInterval(() => {
+                state.battle.timeLeft--;
+                const mins = Math.floor(state.battle.timeLeft / 60);
+                const secs = state.battle.timeLeft % 60;
+                document.getElementById('battle-timer').textContent = 
+                    `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+                if (state.battle.timeLeft <= 0) {
+                    endBattleMatch();
+                }
+            }, 1000);
+        }
+
+        function generateBattleQuestions() {
+            state.battle.qT1 = generateSingleQuestion();
+            state.battle.qT2 = generateSingleQuestion();
+            state.battle.ansT1 = null;
+            state.battle.ansT2 = null;
+        }
+
+        // Updated: Strictly 1 to 9 (0 excluded)
+        function generateSingleQuestion() {
+            const min = state.battle.minRange;
+            const max = state.battle.maxRange;
+            const whole = Math.floor(Math.random() * (max - min + 1)) + min;
+
+            // p1 and p2 must be at least 1 and single-digit (1 to 9)
+            const minP1 = Math.max(1, whole - 9);
+            const maxP1 = Math.min(whole - 1, 9);
+            const p1 = Math.floor(Math.random() * (maxP1 - minP1 + 1)) + minP1;
+            const p2 = whole - p1;
+
+            const positions = ['whole', 'p1', 'p2'];
+            const missingPos = positions[Math.floor(Math.random() * positions.length)];
+
+            return { whole, p1, p2, missingPos };
+        }
+
+        function renderBattleView() {
+            document.getElementById('score-team1').textContent = `${state.battle.scoreT1} 分`;
+            document.getElementById('score-team2').textContent = `${state.battle.scoreT2} 分`;
+            document.getElementById('arena-t1-score').textContent = state.battle.scoreT1;
+            document.getElementById('arena-t2-score').textContent = state.battle.scoreT2;
+
+            renderTeamDiagram(1, state.battle.qT1, state.battle.ansT1);
+            renderTeamDiagram(2, state.battle.qT2, state.battle.ansT2);
+
+            renderTeamKeypad(1);
+            renderTeamKeypad(2);
+        }
+
+        function renderTeamDiagram(teamNum, q, currentAns) {
+            const container = document.getElementById(`t${teamNum}-diagram-card`);
+            if (!q) return;
+
+            const isWholeMissing = q.missingPos === 'whole';
+            const isP1Missing = q.missingPos === 'p1';
+            const isP2Missing = q.missingPos === 'p2';
+
+            const displayWhole = isWholeMissing ? (currentAns !== null ? currentAns : '?') : q.whole;
+            const displayP1 = isP1Missing ? (currentAns !== null ? currentAns : '?') : q.p1;
+            const displayP2 = isP2Missing ? (currentAns !== null ? currentAns : '?') : q.p2;
+
+            const themeBg = teamNum === 1 ? 'bg-teal-200 text-teal-900 border-teal-500' : 'bg-rose-200 text-rose-900 border-rose-500';
+
+            container.innerHTML = `
+                <div class="flex flex-col items-center relative w-full">
+                    <div class="w-14 h-14 rounded-full border-4 border-slate-800 ${isWholeMissing ? 'bg-amber-100 text-amber-900 border-dashed' : themeBg} flex items-center justify-center text-xl font-black shadow z-10">
+                        ${displayWhole}
+                    </div>
+
+                    <svg class="w-28 h-6 -my-0.5 z-0" viewBox="0 0 160 40">
+                        <line x1="80" y1="0" x2="30" y2="40" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+                        <line x1="80" y1="0" x2="130" y2="40" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+                    </svg>
+
+                    <div class="flex justify-between w-full px-2 z-10">
+                        <div class="w-11 h-11 rounded-full border-3 border-slate-800 ${isP1Missing ? 'bg-amber-100 text-amber-900 border-dashed' : 'bg-white text-slate-900'} flex items-center justify-center text-lg font-black shadow">
+                            ${displayP1}
+                        </div>
+                        <div class="w-11 h-11 rounded-full border-3 border-slate-800 ${isP2Missing ? 'bg-amber-100 text-amber-900 border-dashed' : 'bg-white text-slate-900'} flex items-center justify-center text-lg font-black shadow">
+                            ${displayP2}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Updated: Keypad starts from 1 (0 excluded) and triggers immediate verification
+        function renderTeamKeypad(teamNum) {
+            const container = document.getElementById(`t${teamNum}-keypad`);
+            container.innerHTML = '';
+
+            const maxNum = Math.max(state.battle.maxRange, 9);
+            for (let i = 1; i <= maxNum; i++) {
+                const btn = document.createElement('button');
+                btn.className = `w-8 h-8 rounded-lg font-black text-sm md:text-base border-2 border-slate-800 bg-white hover:bg-amber-100 text-slate-900 shadow flex items-center justify-center transition active:scale-110`;
+                btn.textContent = i;
+
+                btn.onpointerdown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleTeamPress(teamNum, i);
+                };
+
+                container.appendChild(btn);
+            }
+        }
+
+        // Instant validation upon button press:
+        // - If correct: score + pull immediately, then next question.
+        // - If wrong: flash wrong answer briefly, clear immediately so student can retry.
+        function handleTeamPress(teamNum, pressedVal) {
+            if (!state.battle.active) return;
+
+            const q = teamNum === 1 ? state.battle.qT1 : state.battle.qT2;
+            let expectedVal = 0;
+            if (q.missingPos === 'whole') expectedVal = q.whole;
+            else if (q.missingPos === 'p1') expectedVal = q.p1;
+            else if (q.missingPos === 'p2') expectedVal = q.p2;
+
+            if (pressedVal === expectedVal) {
+                // Correct: update score and pull rope immediately
+                if (teamNum === 1) {
+                    state.battle.ansT1 = pressedVal;
+                    state.battle.scoreT1++;
+                    triggerPullAnimation(1);
+                    state.battle.qT1 = generateSingleQuestion();
+                    state.battle.ansT1 = null;
+                } else {
+                    state.battle.ansT2 = pressedVal;
+                    state.battle.scoreT2++;
+                    triggerPullAnimation(2);
+                    state.battle.qT2 = generateSingleQuestion();
+                    state.battle.ansT2 = null;
+                }
+
+                renderBattleView();
+                updateRopePosition();
+
+                if (state.battle.scoreT1 >= 5 || state.battle.scoreT2 >= 5) {
+                    endBattleMatch();
+                }
+            } else {
+                // Wrong: display wrong number briefly, shake, then clear immediately
+                if (teamNum === 1) state.battle.ansT1 = pressedVal;
+                else state.battle.ansT2 = pressedVal;
+                
+                renderTeamDiagram(teamNum, q, pressedVal);
+
+                const card = document.getElementById(`t${teamNum}-diagram-card`);
+                card.classList.add('animate-bounce');
+
+                setTimeout(() => {
+                    card.classList.remove('animate-bounce');
+                    if (teamNum === 1) state.battle.ansT1 = null;
+                    else state.battle.ansT2 = null;
+                    renderTeamDiagram(teamNum, q, null);
+                }, 350);
+            }
+        }
+
+        function triggerPullAnimation(pullingTeam) {
+            const r1 = document.getElementById('robot-team1');
+            const r2 = document.getElementById('robot-team2');
+
+            if (pullingTeam === 1) {
+                r1.classList.add('t1-pulling');
+                r2.classList.add('t2-dragged-left');
+
+                setTimeout(() => {
+                    r1.classList.remove('t1-pulling');
+                    r2.classList.remove('t2-dragged-left');
+                }, 750);
+            } else {
+                r2.classList.add('t2-pulling');
+                r1.classList.add('t1-dragged-right');
+
+                setTimeout(() => {
+                    r2.classList.remove('t2-pulling');
+                    r1.classList.remove('t1-dragged-right');
+                }, 750);
+            }
+        }
+
+        function updateRopePosition() {
+            const netScoreDiff = state.battle.scoreT2 - state.battle.scoreT1;
+            const shiftPx = netScoreDiff * 24;
+            const arena = document.getElementById('tug-arena-container');
+            arena.style.transform = `translateX(${shiftPx}px)`;
+        }
+
+        function endBattleMatch() {
+            state.battle.active = false;
+            if (state.battle.timerInterval) clearInterval(state.battle.timerInterval);
+
+            const modal = document.getElementById('battle-winner-modal');
+            const title = document.getElementById('winner-title');
+            const desc = document.getElementById('winner-desc');
+            const iconBox = document.getElementById('winner-icon-box');
+
+            if (state.battle.scoreT1 > state.battle.scoreT2) {
+                title.textContent = "🎉 第一隊（藍隊）獲勝！";
+                desc.textContent = `比分：${state.battle.scoreT1} 對 ${state.battle.scoreT2}，成功將對方拉過中線！`;
+                iconBox.className = "w-20 h-20 rounded-full border-4 border-teal-600 bg-teal-100 flex items-center justify-center text-4xl mb-3 shadow text-teal-600";
+            } else if (state.battle.scoreT2 > state.battle.scoreT1) {
+                title.textContent = "🎉 第二隊（紅隊）獲勝！";
+                desc.textContent = `比分：${state.battle.scoreT2} 對 ${state.battle.scoreT1}，成功將對方拉過中線！`;
+                iconBox.className = "w-20 h-20 rounded-full border-4 border-rose-600 bg-rose-100 flex items-center justify-center text-4xl mb-3 shadow text-rose-600";
+            } else {
+                title.textContent = "🤝 勢均力敵！平局！";
+                desc.textContent = `雙方均獲得 ${state.battle.scoreT1} 分，力量不相上下！`;
+                iconBox.className = "w-20 h-20 rounded-full border-4 border-amber-500 bg-amber-100 flex items-center justify-center text-4xl mb-3 shadow text-amber-500";
+            }
+
+            modal.classList.remove('hidden');
+            confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+        }
+
+        function closeWinnerModal() {
+            document.getElementById('battle-winner-modal').classList.add('hidden');
+            initBattleMode();
+        }
+
+        // Initialize application on page load
+        window.onload = function() {
+            setTargetNumber(3);
+            updateBattleRangePresetButtons();
+        };
+    </script>
+</body>
+</html>
